@@ -54,12 +54,30 @@ All configuration is via environment variables. All have sensible defaults for t
 
 ### 1Password Setup
 
-Credentials are stored in 1Password. Each user needs:
+The `op` CLI requires a service account token to access vaults. This is a **system environment variable** — set it in your shell profile, not in the MCP config.
 
-1. Access to the configured vault (`OP_VAULT`)
-2. A login item with `username` and `password` fields
+**1. Create a service account** at [1Password Developer > Service Accounts](https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/) with read access to the vault containing your credentials.
 
-The default item (`OP_DEFAULT_ITEM`) is used when no email is specified. When an email is provided, the tool looks up an item with that email as its name.
+**2. Add the token to your shell profile:**
+
+```bash
+# ~/.zshrc (macOS) or ~/.bashrc (Linux)
+export OP_SERVICE_ACCOUNT_TOKEN="your-service-account-token-here"
+```
+
+Then reload your shell:
+
+```bash
+source ~/.zshrc  # or source ~/.bashrc
+```
+
+**3. Verify it works:**
+
+```bash
+op vault list
+```
+
+**4. Credential items** — each user needs a login item in the vault (`OP_VAULT`) with `username` and `password` fields. The default item (`OP_DEFAULT_ITEM`) is used when no email is specified. When an email is provided, the tool looks up an item with that email as its name.
 
 ## Installation
 
