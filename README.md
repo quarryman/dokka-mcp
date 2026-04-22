@@ -89,13 +89,17 @@ Add to your `opencode.json`:
 
 ### Claude Code
 
-Run:
+Via CLI:
 
 ```bash
-claude mcp add dokka-browser-auth -- npx github:quarryman/dokka-mcp
+# Per-project (default)
+claude mcp add --transport stdio dokka-browser-auth -- npx github:quarryman/dokka-mcp
+
+# Shared with team via git (stored in .mcp.json at repo root)
+claude mcp add --transport stdio --scope project dokka-browser-auth -- npx github:quarryman/dokka-mcp
 ```
 
-Or add to `.claude/mcp.json`:
+Or manually add to `.mcp.json` (project scope) or `.claude/mcp.json` (local scope):
 
 ```json
 {
