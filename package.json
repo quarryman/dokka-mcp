@@ -1,0 +1,26 @@
+{
+  "name": "@dokka/mcp-browser-auth",
+  "version": "1.0.0",
+  "description": "MCP server for authenticated browser sessions against Dokka apps using playwright-cli and 1Password",
+  "bin": "./dist/index.js",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "prepare": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist"
+  ]
+}
