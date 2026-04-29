@@ -211,8 +211,8 @@ function step2_loadCookies(): void {
   }
 }
 
-function step3_navigateToApp(): void {
-  run(`playwright-cli goto ${APP_URL}`);
+function step3_navigateToApp(appUrl: string = APP_URL): void {
+  run(`playwright-cli goto ${appUrl}`);
 }
 
 function step5_getCredentials(email?: string): {
@@ -275,10 +275,10 @@ async function step7_checkFor2FA(): Promise<'ok' | '2fa_required' | 'error'> {
   return 'ok';
 }
 
-function step8_redirectToLocal(): void {
+function step8_redirectToLocal(appUrl: string = APP_URL): void {
   const urlHost = new URL(getCurrentUrl()).hostname;
   if (urlHost !== 'local.dokka.biz') {
-    run(`playwright-cli goto ${APP_URL}`);
+    run(`playwright-cli goto ${appUrl}`);
   }
 }
 
@@ -302,15 +302,24 @@ After this tool completes, the browser session is managed by playwright-cli.
 Use playwright-cli commands (snapshot, click, fill, goto, etc.) for further interaction.
 Returns an error if authentication fails. The ONLY case requiring human input is 2FA/OTP.
 If email is provided, looks up credentials from 1Password by email (item name = email).
-If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.`,
+If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.
+If port is provided, overrides the default port 3000 in the local app URL.`,
   {
     email: z
       .string()
       .email()
       .optional()
       .describe('Email to look up credentials in 1Password. If omitted, uses the default user.'),
+    port: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Local app port. If specified, overrides the default port 3000 in the app URL.'),
   },
-  async ({ email }) => {
+  async ({ email, port }) => {
+    // Build effective app URL — override port if provided
+    const effectiveAppUrl = port ? APP_URL.replace(/:3000\b/, `:${port}`) : APP_URL;
     const steps: string[] = [];
 
     // Resolve target user email
@@ -345,7 +354,7 @@ If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.`,
 
           if (isCorrectUser) {
             steps.push(`Detected existing authenticated browser session (user: ${browserUser ?? 'unknown'})`);
-            step8_redirectToLocal();
+            step8_redirectToLocal(effectiveAppUrl);
             steps.push('Step 8: ✓ On local app');
             step9_saveState();
             steps.push('Step 9: ✓ Session state saved');
@@ -410,7 +419,7 @@ If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.`,
 
       // Step 4: Navigate to app
       steps.push('Step 4: Navigating to app...');
-      step3_navigateToApp();
+      step3_navigateToApp(effectiveAppUrl);
       steps.push('Step 4: ✓ Navigation complete');
 
       if (authStatus === 'authenticated') {
@@ -485,7 +494,7 @@ If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.`,
 
       // Step 8: Redirect to local
       steps.push('Step 8: Redirecting to local app...');
-      step8_redirectToLocal();
+      step8_redirectToLocal(effectiveAppUrl);
       steps.push('Step 8: ✓ On local app');
 
       // Step 9: Save state
