@@ -291,8 +291,10 @@ async function step7_checkFor2FA(): Promise<'ok' | '2fa_required' | 'error'> {
 }
 
 function step8_redirectToLocal(appUrl: string = APP_URL): void {
-  const urlHost = new URL(getCurrentUrl()).hostname;
-  if (urlHost !== 'local.dokka.biz') {
+  const current = new URL(getCurrentUrl());
+  const target = new URL(appUrl);
+  // Redirect if not on the correct host OR not on the correct port
+  if (current.hostname !== 'local.dokka.biz' || current.port !== target.port) {
     run(`playwright-cli goto ${appUrl}`);
   }
 }
@@ -369,8 +371,9 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
 
           if (isCorrectUser) {
             steps.push(`Detected existing authenticated browser session (user: ${browserUser ?? 'unknown'})`);
+            // Always ensure we're on the correct local URL (including port)
             step8_redirectToLocal(effectiveAppUrl);
-            steps.push('Step 8: ✓ On local app');
+            steps.push(`Step 8: ✓ On local app (${effectiveAppUrl})`);
             step9_saveState();
             steps.push('Step 9: ✓ Session state saved');
             return {
