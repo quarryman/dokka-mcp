@@ -215,6 +215,21 @@ function step3_navigateToApp(appUrl: string = APP_URL): void {
   run(`playwright-cli goto ${appUrl}`);
 }
 
+/**
+ * After navigating to the app, the app does a client-side JS redirect to the
+ * login page. playwright-cli goto returns after initial page load, before the
+ * redirect completes. This waits for the URL to leave local.dokka.biz.
+ */
+function waitForLoginRedirect(): void {
+  const script = [
+    'async page => {',
+    '  const target = "local.dokka.biz";',
+    '  await page.waitForURL(url => !url.hostname.includes(target), { timeout: 15000 });',
+    '}',
+  ].join(' ');
+  run(`playwright-cli run-code "${script.replace(/"/g, '\\"')}"`, 20_000);
+}
+
 function step5_getCredentials(email?: string): {
   username: string;
   password: string;
@@ -446,6 +461,11 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
       steps.push('Step 5: Retrieving credentials from 1Password...');
       const { username, password } = step5_getCredentials(email);
       steps.push('Step 5: ✓ Credentials retrieved');
+
+      // Step 5b: Wait for client-side redirect to login page
+      steps.push('Step 5b: Waiting for login page redirect...');
+      waitForLoginRedirect();
+      steps.push('Step 5b: ✓ Login page loaded');
 
       // Step 6: Fill login form
       steps.push('Step 6: Filling login form...');
