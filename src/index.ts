@@ -82,12 +82,17 @@ function run(cmd: string, timeoutMs = 30_000): string {
   }
 }
 
+/** Build a session-aware playwright-cli command. */
+function pcli(sessionName: string, subcommand: string): string {
+  return `playwright-cli -s=${sessionName} ${subcommand}`;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function takeSnapshot(): { summary: string; content: string; url: string } {
-  const summary = run('playwright-cli snapshot');
+function takeSnapshot(session: string): { summary: string; content: string; url: string } {
+  const summary = run(pcli(session, 'snapshot'));
   const url = summary.match(/Page URL:\s*(.*)/)?.[1]?.trim() ?? '';
 
   const fileMatch = summary.match(/\[Snapshot\]\((.+?\.yml)\)/);
@@ -102,8 +107,8 @@ function takeSnapshot(): { summary: string; content: string; url: string } {
   return { summary, content, url };
 }
 
-function getCurrentUrl(): string {
-  return takeSnapshot().url;
+function getCurrentUrl(session: string): string {
+  return takeSnapshot(session).url;
 }
 
 /**
@@ -201,18 +206,18 @@ function checkTokenValid(targetEmail?: string): boolean {
 // Auth Flow Steps
 // ---------------------------------------------------------------------------
 
-function step1_openBrowser(): void {
-  run('playwright-cli open --browser=chrome --headed');
+function step1_openBrowser(session: string): void {
+  run(pcli(session, 'open --browser=chrome --headed'));
 }
 
-function step2_loadCookies(): void {
+function step2_loadCookies(session: string): void {
   if (existsSync(AUTH_STATE_PATH)) {
-    run(`playwright-cli state-load ${AUTH_STATE_PATH}`);
+    run(pcli(session, `state-load ${AUTH_STATE_PATH}`));
   }
 }
 
-function step3_navigateToApp(appUrl: string = APP_URL): void {
-  run(`playwright-cli goto ${appUrl}`);
+function step3_navigateToApp(session: string, appUrl: string = APP_URL): void {
+  run(pcli(session, `goto ${appUrl}`));
 }
 
 /**
@@ -220,14 +225,14 @@ function step3_navigateToApp(appUrl: string = APP_URL): void {
  * login page. playwright-cli goto returns after initial page load, before the
  * redirect completes. This waits for the URL to leave local.dokka.biz.
  */
-function waitForLoginRedirect(): void {
+function waitForLoginRedirect(session: string): void {
   const script = [
     'async page => {',
     '  const target = "local.dokka.biz";',
     '  await page.waitForURL(url => !url.hostname.includes(target), { timeout: 15000 });',
     '}',
   ].join(' ');
-  run(`playwright-cli run-code "${script.replace(/"/g, '\\"')}"`, 20_000);
+  run(pcli(session, `run-code "${script.replace(/"/g, '\\"')}"`), 20_000);
 }
 
 function step5_getCredentials(email?: string): {
@@ -245,20 +250,20 @@ function step5_getCredentials(email?: string): {
   return { username, password };
 }
 
-function step6_fillLoginForm(username: string, password: string): void {
+function step6_fillLoginForm(session: string, username: string, password: string): void {
   const fillScript = `async page => {
     await page.getByRole('textbox', { name: 'Email' }).fill('${username}');
     await page.getByRole('textbox', { name: 'Password' }).fill('${password}');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   }`;
 
-  run(`playwright-cli run-code "${fillScript.replace(/"/g, '\\"')}"`, 15_000);
+  run(pcli(session, `run-code "${fillScript.replace(/"/g, '\\"')}"`), 15_000);
 }
 
-async function step7_checkFor2FA(): Promise<'ok' | '2fa_required' | 'error'> {
+async function step7_checkFor2FA(session: string): Promise<'ok' | '2fa_required' | 'error'> {
   await sleep(5_000);
 
-  const { url, content } = takeSnapshot();
+  const { url, content } = takeSnapshot(session);
 
   if (
     content.includes('Verification code') ||
@@ -279,7 +284,7 @@ async function step7_checkFor2FA(): Promise<'ok' | '2fa_required' | 'error'> {
 
   if (urlHost === LOGIN_HOST) {
     await sleep(3_000);
-    const snap2 = takeSnapshot();
+    const snap2 = takeSnapshot(session);
     const url2Host = new URL(snap2.url).hostname;
     if (url2Host === REDIRECT_HOST || url2Host === 'local.dokka.biz') {
       return 'ok';
@@ -290,17 +295,17 @@ async function step7_checkFor2FA(): Promise<'ok' | '2fa_required' | 'error'> {
   return 'ok';
 }
 
-function step8_redirectToLocal(appUrl: string = APP_URL): void {
-  const current = new URL(getCurrentUrl());
+function step8_redirectToLocal(session: string, appUrl: string = APP_URL): void {
+  const current = new URL(getCurrentUrl(session));
   const target = new URL(appUrl);
   // Redirect if not on the correct host OR not on the correct port
   if (current.hostname !== 'local.dokka.biz' || current.port !== target.port) {
-    run(`playwright-cli goto ${appUrl}`);
+    run(pcli(session, `goto ${appUrl}`));
   }
 }
 
-function step9_saveState(): void {
-  run(`playwright-cli state-save ${AUTH_STATE_PATH}`);
+function step9_saveState(session: string): void {
+  run(pcli(session, `state-save ${AUTH_STATE_PATH}`));
 }
 
 // ---------------------------------------------------------------------------
@@ -315,8 +320,8 @@ const server = new McpServer({
 server.tool(
   'open_authenticated_browser',
   `Opens a Chrome browser authenticated against ${APP_URL}.
-After this tool completes, the browser session is managed by playwright-cli.
-Use playwright-cli commands (snapshot, click, fill, goto, etc.) for further interaction.
+Each port gets its own browser session (e.g. port 3003 and 3004 open separate browsers).
+After this tool completes, use playwright-cli with -s=port{N} for further interaction.
 Returns an error if authentication fails. The ONLY case requiring human input is 2FA/OTP.
 If email is provided, looks up credentials from 1Password by email (item name = email).
 If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.
@@ -337,6 +342,8 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
   async ({ email, port }) => {
     // Build effective app URL — override port if provided
     const effectiveAppUrl = port ? APP_URL.replace(/:3000\b/, `:${port}`) : APP_URL;
+    const effectivePort = new URL(effectiveAppUrl).port || '443';
+    const session = `port${effectivePort}`;
     const steps: string[] = [];
 
     // Resolve target user email
@@ -350,15 +357,15 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
     }
 
     try {
-      // Check if browser is already open with a completed session (post-2FA resume)
+      // Check if this session's browser is already open with a completed session (post-2FA resume)
       try {
-        const existing = takeSnapshot();
+        const existing = takeSnapshot(session);
         const existingHost = new URL(existing.url).hostname;
 
         if (existingHost === 'app.dokka.biz' || existingHost === 'local.dokka.biz') {
           let browserUser: string | null = null;
           try {
-            const cookieOutput = run('playwright-cli cookie-list --domain=dokka.biz');
+            const cookieOutput = run(pcli(session, 'cookie-list --domain=dokka.biz'));
             const lastAuthMatch = cookieOutput.match(/LastAuthUser=([^\s(]+)/);
             if (lastAuthMatch) {
               browserUser = decodeURIComponent(lastAuthMatch[1]);
@@ -370,11 +377,10 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
           const isCorrectUser = !targetEmail || targetEmail === browserUser;
 
           if (isCorrectUser) {
-            steps.push(`Detected existing authenticated browser session (user: ${browserUser ?? 'unknown'})`);
-            // Always ensure we're on the correct local URL (including port)
-            step8_redirectToLocal(effectiveAppUrl);
+            steps.push(`Detected existing authenticated browser session (user: ${browserUser ?? 'unknown'}, session: ${session})`);
+            step8_redirectToLocal(session, effectiveAppUrl);
             steps.push(`Step 8: ✓ On local app (${effectiveAppUrl})`);
-            step9_saveState();
+            step9_saveState(session);
             steps.push('Step 9: ✓ Session state saved');
             return {
               content: [
@@ -383,10 +389,13 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
                   text: [
                     'Browser authenticated successfully (resumed after 2FA).',
                     '',
+                    `Session: ${session}`,
+                    `Use playwright-cli with -s=${session} for further interaction.`,
+                    '',
                     'Session log:',
                     ...steps,
                     '',
-                    'The browser is open and ready. Use playwright-cli commands for further interaction.',
+                    'The browser is open and ready.',
                   ].join('\n'),
                 },
               ],
@@ -396,7 +405,7 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
           }
         }
       } catch {
-        // No browser open
+        // No browser open for this session
       }
 
       // Check if a different user is currently saved — switch if needed
@@ -405,7 +414,7 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
         if (savedUser && savedUser !== targetEmail) {
           steps.push(`Switching user: ${savedUser} → ${targetEmail}`);
           try {
-            run('playwright-cli close');
+            run(pcli(session, 'close'));
           } catch {
             /* not open */
           }
@@ -417,13 +426,13 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
       }
 
       // Step 1: Open browser
-      steps.push('Step 1: Opening browser...');
-      step1_openBrowser();
+      steps.push(`Step 1: Opening browser (session: ${session})...`);
+      step1_openBrowser(session);
       steps.push('Step 1: ✓ Browser opened');
 
       // Step 2: Load saved cookies
       steps.push('Step 2: Loading saved cookies...');
-      step2_loadCookies();
+      step2_loadCookies(session);
       steps.push(
         existsSync(AUTH_STATE_PATH)
           ? 'Step 2: ✓ Cookies loaded from auth.json'
@@ -437,11 +446,11 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
 
       // Step 4: Navigate to app
       steps.push('Step 4: Navigating to app...');
-      step3_navigateToApp(effectiveAppUrl);
+      step3_navigateToApp(session, effectiveAppUrl);
       steps.push('Step 4: ✓ Navigation complete');
 
       if (authStatus === 'authenticated') {
-        step9_saveState();
+        step9_saveState(session);
         steps.push('Step 9: ✓ Session state saved');
         return {
           content: [
@@ -450,10 +459,13 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
               text: [
                 'Browser authenticated successfully (cookies were valid).',
                 '',
+                `Session: ${session}`,
+                `Use playwright-cli with -s=${session} for further interaction.`,
+                '',
                 'Session log:',
                 ...steps,
                 '',
-                'The browser is open and ready. Use playwright-cli commands for further interaction.',
+                'The browser is open and ready.',
               ].join('\n'),
             },
           ],
@@ -467,17 +479,17 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
 
       // Step 5b: Wait for client-side redirect to login page
       steps.push('Step 5b: Waiting for login page redirect...');
-      waitForLoginRedirect();
+      waitForLoginRedirect(session);
       steps.push('Step 5b: ✓ Login page loaded');
 
       // Step 6: Fill login form
       steps.push('Step 6: Filling login form...');
-      step6_fillLoginForm(username, password);
+      step6_fillLoginForm(session, username, password);
       steps.push('Step 6: ✓ Login form submitted');
 
       // Step 7: Check for 2FA
       steps.push('Step 7: Checking for 2FA...');
-      const loginResult = await step7_checkFor2FA();
+      const loginResult = await step7_checkFor2FA(session);
       steps.push(`Step 7: ✓ Login result: ${loginResult}`);
 
       if (loginResult === '2fa_required') {
@@ -488,6 +500,8 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
               text: [
                 '2FA REQUIRED: A one-time password is needed.',
                 'Please enter the OTP in the browser manually, then call this tool again to complete authentication (redirect + save session).',
+                '',
+                `Session: ${session}`,
                 '',
                 'Session log:',
                 ...steps,
@@ -517,12 +531,12 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
 
       // Step 8: Redirect to local
       steps.push('Step 8: Redirecting to local app...');
-      step8_redirectToLocal(effectiveAppUrl);
+      step8_redirectToLocal(session, effectiveAppUrl);
       steps.push('Step 8: ✓ On local app');
 
       // Step 9: Save state
       steps.push('Step 9: Saving session state...');
-      step9_saveState();
+      step9_saveState(session);
       steps.push('Step 9: ✓ Session state saved');
 
       return {
@@ -532,10 +546,13 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
             text: [
               'Browser authenticated successfully (login was required, completed automatically).',
               '',
+              `Session: ${session}`,
+              `Use playwright-cli with -s=${session} for further interaction.`,
+              '',
               'Session log:',
               ...steps,
               '',
-              'The browser is open and ready. Use playwright-cli commands for further interaction.',
+              'The browser is open and ready.',
             ].join('\n'),
           },
         ],
@@ -566,17 +583,35 @@ server.tool(
   'logout_browser_session',
   `Logs out: closes the browser and clears auth tokens from saved session (${AUTH_STATE_PATH}).
 Preserves 2FA device trust cookies so the next login skips OTP.
-Call this when the user wants to log out or reset their browser session.`,
-  {},
-  async () => {
+Call this when the user wants to log out or reset their browser session.
+If port is provided, only closes that session. Otherwise closes all sessions.`,
+  {
+    port: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Close only the browser session for this port. If omitted, closes all sessions.'),
+  },
+  async ({ port }) => {
     const steps: string[] = [];
 
     try {
-      try {
-        run('playwright-cli close');
-        steps.push('✓ Browser closed');
-      } catch {
-        steps.push('✓ No browser was open');
+      if (port) {
+        const session = `port${port}`;
+        try {
+          run(pcli(session, 'close'));
+          steps.push(`✓ Browser session ${session} closed`);
+        } catch {
+          steps.push(`✓ No browser was open for session ${session}`);
+        }
+      } else {
+        try {
+          run('playwright-cli close-all');
+          steps.push('✓ All browser sessions closed');
+        } catch {
+          steps.push('✓ No browsers were open');
+        }
       }
 
       if (!existsSync(AUTH_STATE_PATH)) {
