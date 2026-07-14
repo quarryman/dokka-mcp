@@ -362,7 +362,7 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
         const existing = takeSnapshot(session);
         const existingHost = new URL(existing.url).hostname;
 
-        if (existingHost === 'app.dokka.biz' || existingHost === 'local.dokka.biz') {
+        if (existingHost === 'app-dev.dokka.biz' || existingHost === 'app.dokka.biz' || existingHost === 'local.dokka.biz') {
           let browserUser: string | null = null;
           try {
             const cookieOutput = run(pcli(session, 'cookie-list --domain=dokka.biz'));
