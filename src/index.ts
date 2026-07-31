@@ -322,6 +322,7 @@ server.tool(
   `Opens a Chrome browser authenticated against ${APP_URL}.
 Each port gets its own browser session (e.g. port 3003 and 3004 open separate browsers).
 After this tool completes, use playwright-cli with -s=port{N} for further interaction.
+IMPORTANT: run those playwright-cli commands from the SAME working directory this MCP server runs in (the directory opencode was launched from — typically the main project root), NOT from a git worktree subfolder. playwright-cli binds its browser daemon/session to the caller's cwd, so commands issued from a different cwd (e.g. a feature worktree) will report "no browsers" / "session not open" even though the browser is open.
 Returns an error if authentication fails. The ONLY case requiring human input is 2FA/OTP.
 If email is provided, looks up credentials from 1Password by email (item name = email).
 If email is omitted, uses the default "${OP_DEFAULT_ITEM}" credentials.
@@ -391,6 +392,7 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
                     '',
                     `Session: ${session}`,
                     `Use playwright-cli with -s=${session} for further interaction.`,
+                    `Run playwright-cli from this MCP server's working directory (the one opencode was launched from, typically the main project root) — NOT from a git worktree — since playwright-cli binds the browser session to the caller's cwd; a different cwd reports "no browsers".`,
                     '',
                     'Session log:',
                     ...steps,
@@ -461,6 +463,7 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
                 '',
                 `Session: ${session}`,
                 `Use playwright-cli with -s=${session} for further interaction.`,
+                `Run playwright-cli from this MCP server's working directory (the one opencode was launched from, typically the main project root) — NOT from a git worktree — since playwright-cli binds the browser session to the caller's cwd; a different cwd reports "no browsers".`,
                 '',
                 'Session log:',
                 ...steps,
@@ -548,6 +551,7 @@ If port is provided, overrides the default port 3000 in the local app URL.`,
               '',
               `Session: ${session}`,
               `Use playwright-cli with -s=${session} for further interaction.`,
+              `Run playwright-cli from this MCP server's working directory (the one opencode was launched from, typically the main project root) — NOT from a git worktree — since playwright-cli binds the browser session to the caller's cwd; a different cwd reports "no browsers".`,
               '',
               'Session log:',
               ...steps,
